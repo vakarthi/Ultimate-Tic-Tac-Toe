@@ -13,7 +13,7 @@ export interface GameState {
   currentPlayer: Player;
   winner: Winner;
   history: MoveHistory[];
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: 'easy' | 'medium' | 'hard' | 'impossible';
   lastMove: { boardIndex: number; cellIndex: number } | null;
 }
 
@@ -26,28 +26,58 @@ export interface MoveHistory {
 export type GameMode = 'local' | 'cpu' | 'online';
 
 export interface PeerData {
-  type: 'MOVE' | 'SYNC' | 'RESTART';
+  type: 'HANDSHAKE' | 'MOVE' | 'SYNC' | 'RESTART' | 'GAME_END';
+  payload?: any;
   boardIndex?: number;
   cellIndex?: number;
   state?: GameState;
 }
 
-export interface PlayerStats {
-  wins: number;
-  losses: number;
-  draws: number;
-}
+// --- NEW TYPES FOR CHESS.COM FEATURES ---
 
 export interface GameStats {
-  local: {
-    X: number;
-    O: number;
+  local: { X: number; O: number; draws: number };
+  cpu: {
+    easy: { wins: number; losses: number; draws: number };
+    medium: { wins: number; losses: number; draws: number };
+    hard: { wins: number; losses: number; draws: number };
+    impossible: { wins: number; losses: number; draws: number };
+  };
+  online: { wins: number; losses: number; draws: number };
+}
+
+export interface PlayerProfile {
+  username: string;
+  joinDate: string; // ISO String
+  ratings: {
+    online: number;
+    cpu: number;
+  };
+  stats: {
+    wins: number;
+    losses: number;
     draws: number;
   };
-  cpu: {
-    easy: PlayerStats;
-    medium: PlayerStats;
-    hard: PlayerStats;
-  };
-  online: PlayerStats;
+  detailedStats: GameStats;
+}
+
+export interface MatchRecord {
+  id: string;
+  date: string;
+  opponentName: string;
+  opponentRating: number;
+  mode: GameMode;
+  result: 'win' | 'loss' | 'draw';
+  ratingChange: number;
+  moves: number; // move count
+  history: MoveHistory[]; // to allow analysis later
+}
+
+export type MoveClassification = 'brilliant' | 'best' | 'good' | 'inaccuracy' | 'blunder' | 'forced';
+
+export interface MoveAnalysis {
+  moveIndex: number;
+  evaluation: number; // -100 to 100 roughly, or raw score
+  classification: MoveClassification;
+  bestMove?: { boardIndex: number; cellIndex: number };
 }

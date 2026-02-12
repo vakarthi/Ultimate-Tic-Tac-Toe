@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Globe, BarChart2, X } from 'lucide-react';
+import { Users, Cpu, Globe, BarChart2, X, BrainCircuit } from 'lucide-react';
 import { getStats } from '../services/stats';
 import { GameStats } from '../types';
 
 interface MenuProps {
   onStartLocal: () => void;
-  onStartCpu: (difficulty: 'easy' | 'medium' | 'hard') => void;
+  onStartCpu: (difficulty: 'easy' | 'medium' | 'hard' | 'impossible') => void;
   onHostOnline: () => void;
   onJoinOnline: (id: string) => void;
   isConnecting: boolean;
@@ -23,23 +23,25 @@ const Menu: React.FC<MenuProps> = ({ onStartLocal, onStartCpu, onHostOnline, onJ
     }
   }, [menuState]);
 
-  const Button = ({ onClick, icon: Icon, title, desc, primary = false }: any) => (
+  const Button = ({ onClick, icon: Icon, title, desc, primary = false, danger = false }: any) => (
     <button 
       onClick={onClick}
       className={`
         w-full p-4 rounded-xl border flex items-center gap-4 transition-all duration-200 text-left group
         ${primary 
           ? 'bg-sky-600 border-sky-500 hover:bg-sky-500 text-white shadow-lg shadow-sky-900/20' 
-          : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800 text-slate-200'
+          : danger 
+             ? 'bg-slate-900 border-rose-900/50 hover:bg-rose-950/30 hover:border-rose-500/50 text-slate-200'
+             : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800 text-slate-200'
         }
       `}
     >
-      <div className={`p-3 rounded-lg ${primary ? 'bg-white/20' : 'bg-slate-950 group-hover:bg-slate-900'}`}>
-        <Icon size={24} className={primary ? 'text-white' : 'text-sky-400'} />
+      <div className={`p-3 rounded-lg ${primary ? 'bg-white/20' : danger ? 'bg-rose-500/10' : 'bg-slate-950 group-hover:bg-slate-900'}`}>
+        <Icon size={24} className={primary ? 'text-white' : danger ? 'text-rose-500' : 'text-sky-400'} />
       </div>
       <div>
-        <div className="font-bold text-lg">{title}</div>
-        <div className={`text-sm ${primary ? 'text-sky-100' : 'text-slate-400'}`}>{desc}</div>
+        <div className={`font-bold text-lg ${danger ? 'text-rose-400' : ''}`}>{title}</div>
+        <div className={`text-sm ${primary ? 'text-sky-100' : danger ? 'text-rose-300/70' : 'text-slate-400'}`}>{desc}</div>
       </div>
     </button>
   );
@@ -112,9 +114,13 @@ const Menu: React.FC<MenuProps> = ({ onStartLocal, onStartCpu, onHostOnline, onJ
               onClick={() => onStartCpu('medium')}
             />
             <Button 
-              icon={Cpu} title="Advanced" desc="Minimax-lite heuristic AI"
+              icon={Cpu} title="Advanced" desc="Heuristic evaluation"
               onClick={() => onStartCpu('hard')}
-              primary
+            />
+             <Button 
+              icon={BrainCircuit} title="Impossible" desc="Adapts to your strategy (Elo 2200)"
+              onClick={() => onStartCpu('impossible')}
+              danger
             />
             <button onClick={() => setMenuState('main')} className="w-full text-center text-slate-500 hover:text-slate-300 py-2">Back</button>
           </div>
@@ -122,7 +128,7 @@ const Menu: React.FC<MenuProps> = ({ onStartLocal, onStartCpu, onHostOnline, onJ
 
         {menuState === 'stats' && stats && (
            <div className="space-y-4 animate-fade-in-up relative">
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 shadow-xl">
+              <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 shadow-xl max-h-[60vh] overflow-y-auto">
                  <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
                        <BarChart2 size={20} className="text-sky-400"/> Statistics
@@ -147,6 +153,7 @@ const Menu: React.FC<MenuProps> = ({ onStartLocal, onStartCpu, onHostOnline, onJ
                           <StatRow label="Easy" wins={stats.cpu.easy.wins} losses={stats.cpu.easy.losses} draws={stats.cpu.easy.draws} />
                           <StatRow label="Medium" wins={stats.cpu.medium.wins} losses={stats.cpu.medium.losses} draws={stats.cpu.medium.draws} />
                           <StatRow label="Hard" wins={stats.cpu.hard.wins} losses={stats.cpu.hard.losses} draws={stats.cpu.hard.draws} />
+                          <StatRow label="Impossible" wins={stats.cpu.impossible?.wins || 0} losses={stats.cpu.impossible?.losses || 0} draws={stats.cpu.impossible?.draws || 0} />
                        </div>
                     </div>
                  </div>

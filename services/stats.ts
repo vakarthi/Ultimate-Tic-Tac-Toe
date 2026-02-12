@@ -1,96 +1,101 @@
-import { GameStats, GameMode, Winner } from '../types';
+import { PlayerProfile, MatchRecord } from '../types';
 
-const STATS_KEY = 'ultimate_ttt_stats_v1';
+const PROFILE_KEY = 'uttt_profile_v2';
+const HISTORY_KEY = 'uttt_match_history_v2';
 
-const DEFAULT_STATS: GameStats = {
-  local: { X: 0, O: 0, draws: 0 },
-  cpu: {
-    easy: { wins: 0, losses: 0, draws: 0 },
-    medium: { wins: 0, losses: 0, draws: 0 },
-    hard: { wins: 0, losses: 0, draws: 0 },
+const DEFAULT_PROFILE: PlayerProfile = {
+  username: 'Player',
+  joinDate: new Date().toISOString(),
+  ratings: {
+    online: 1200,
+    cpu: 800,
   },
-  online: { wins: 0, losses: 0, draws: 0 },
+  stats: { wins: 0, losses: 0, draws: 0 },
+  detailedStats: {
+    local: { X: 0, O: 0, draws: 0 },
+    cpu: {
+        easy: { wins: 0, losses: 0, draws: 0 },
+        medium: { wins: 0, losses: 0, draws: 0 },
+        hard: { wins: 0, losses: 0, draws: 0 },
+        impossible: { wins: 0, losses: 0, draws: 0 },
+    },
+    online: { wins: 0, losses: 0, draws: 0 }
+  }
 };
 
-export const getStats = (): GameStats => {
+export const getProfile = (): PlayerProfile => {
   try {
-    const stored = localStorage.getItem(STATS_KEY);
-    return stored ? { ...DEFAULT_STATS, ...JSON.parse(stored) } : DEFAULT_STATS;
+    const stored = localStorage.getItem(PROFILE_KEY);
+    if (!stored) return DEFAULT_PROFILE;
+    const parsed = JSON.parse(stored);
+    
+    // Ensure deep merge of new stat keys if they don't exist in old localstorage
+    const merged = { ...DEFAULT_PROFILE, ...parsed };
+    merged.detailedStats = { ...DEFAULT_PROFILE.detailedStats, ...parsed.detailedStats };
+    merged.detailedStats.cpu = { ...DEFAULT_PROFILE.detailedStats.cpu, ...parsed.detailedStats.cpu };
+    
+    return merged;
   } catch (e) {
-    console.error('Failed to load stats', e);
-    return DEFAULT_STATS;
+    return DEFAULT_PROFILE;
   }
 };
 
-export const saveStats = (stats: GameStats) => {
+export const getStats = () => {
+    return getProfile().detailedStats;
+};
+
+export const saveProfile = (profile: PlayerProfile) => {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+};
+
+export const getMatchHistory = (): MatchRecord[] => {
   try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    const stored = localStorage.getItem(HISTORY_KEY);
+    return stored ? JSON.parse(stored) : [];
   } catch (e) {
-    console.error('Failed to save stats', e);
+    return [];
   }
 };
 
-export const updateStats = (
-  mode: GameMode,
-  winner: Winner,
-  difficulty?: 'easy' | 'medium' | 'hard',
-): GameStats => {
-  const currentStats = getStats();
-  const newStats = { ...currentStats };
-
-  if (mode === 'local') {
-    if (winner === 'X') newStats.local.X++;
-    else if (winner === 'O') newStats.local.O++;
-    else if (winner === 'Draw') newStats.local.draws++;
-  } else if (mode === 'cpu' && difficulty) {
-    // In CPU mode, Player is X, CPU is O
-    if (winner === 'X') newStats.cpu[difficulty].wins++;
-    else if (winner === 'O') newStats.cpu[difficulty].losses++;
-    else if (winner === 'Draw') newStats.cpu[difficulty].draws++;
-  } else if (mode === 'online') {
-    // In Online, we need to know if "I" won.
-    // Assuming this is called from the client's perspective.
-    // App.tsx knows 'myPlayerId'. We need to pass that or handle it in App.tsx.
-    // Simplification: We'll calculate the stats update object in App.tsx and pass it here?
-    // Or we handle logic here. Let's make this function generic update.
-  }
-
-  saveStats(newStats);
-  return newStats;
+export const saveMatchRecord = (record: MatchRecord) => {
+  const history = getMatchHistory();
+  // Keep last 50 games
+  const newHistory = [record, ...history].slice(0, 50);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
 };
 
-// Helper to specifically record a result for the current user
-export const recordGameResult = (
-  mode: GameMode,
+export const updateProfileAfterGame = (
   result: 'win' | 'loss' | 'draw',
-  difficulty?: 'easy' | 'medium' | 'hard'
+  mode: 'online' | 'cpu' | 'local',
+  ratingChange: number,
+  difficulty?: 'easy' | 'medium' | 'hard' | 'impossible'
 ) => {
-  const currentStats = getStats();
-  const newStats = { ...currentStats };
+  const profile = getProfile();
+  
+  // Update Rating
+  if (mode === 'online') profile.ratings.online += ratingChange;
+  if (mode === 'cpu') profile.ratings.cpu += ratingChange;
 
-  if (mode === 'cpu' && difficulty) {
-    if (result === 'win') newStats.cpu[difficulty].wins++;
-    else if (result === 'loss') newStats.cpu[difficulty].losses++;
-    else newStats.cpu[difficulty].draws++;
+  // Update Global Stats
+  if (result === 'win') profile.stats.wins++;
+  else if (result === 'loss') profile.stats.losses++;
+  else profile.stats.draws++;
+
+  // Update Detailed Stats
+  if (mode === 'local') {
+      if (result === 'win') profile.detailedStats.local.X++;
+      else if (result === 'loss') profile.detailedStats.local.O++;
+      else profile.detailedStats.local.draws++;
+  } else if (mode === 'cpu' && difficulty) {
+      if (result === 'win') profile.detailedStats.cpu[difficulty].wins++;
+      else if (result === 'loss') profile.detailedStats.cpu[difficulty].losses++;
+      else profile.detailedStats.cpu[difficulty].draws++;
   } else if (mode === 'online') {
-    if (result === 'win') newStats.online.wins++;
-    else if (result === 'loss') newStats.online.losses++;
-    else newStats.online.draws++;
+      if (result === 'win') profile.detailedStats.online.wins++;
+      else if (result === 'loss') profile.detailedStats.online.losses++;
+      else profile.detailedStats.online.draws++;
   }
-  // Local is handled slightly differently (X vs O), handled by `updateLocalStats` below
-  
-  saveStats(newStats);
-  return newStats;
-};
 
-export const recordLocalResult = (winner: Winner) => {
-  const currentStats = getStats();
-  const newStats = { ...currentStats };
-  
-  if (winner === 'X') newStats.local.X++;
-  else if (winner === 'O') newStats.local.O++;
-  else if (winner === 'Draw') newStats.local.draws++;
-
-  saveStats(newStats);
-  return newStats;
+  saveProfile(profile);
+  return profile;
 };
