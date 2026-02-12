@@ -88,7 +88,7 @@ const App: React.FC = () => {
       setConnectionStatus('disconnected');
     });
 
-    peer.onConnection((conn) => {
+    peer.onConnection((_conn) => {
       setConnectionStatus('connected');
       setGameMode('online');
       setMyPlayerId('X');
@@ -98,7 +98,7 @@ const App: React.FC = () => {
     });
 
     peer.onData((data) => {
-      if (data.type === 'MOVE') {
+      if (data.type === 'MOVE' && typeof data.boardIndex === 'number' && typeof data.cellIndex === 'number') {
         handleMove(data.boardIndex, data.cellIndex, true);
       } else if (data.type === 'RESTART') {
         setGameState(INITIAL_GAME_STATE);
@@ -113,7 +113,7 @@ const App: React.FC = () => {
     setPeerService(peer);
 
     peer.init(() => {
-      peer.connect(hostId, (conn) => {
+      peer.connect(hostId, (_conn) => {
         setConnectionStatus('connected');
         setGameMode('online');
         setMyPlayerId('O');
@@ -121,10 +121,10 @@ const App: React.FC = () => {
     });
 
     peer.onData((data) => {
-      if (data.type === 'SYNC') {
+      if (data.type === 'SYNC' && data.state) {
         setGameState(data.state);
         setUndoneMoves([]);
-      } else if (data.type === 'MOVE') {
+      } else if (data.type === 'MOVE' && typeof data.boardIndex === 'number' && typeof data.cellIndex === 'number') {
         handleMove(data.boardIndex, data.cellIndex, true);
       } else if (data.type === 'RESTART') {
         setGameState(INITIAL_GAME_STATE);
@@ -167,7 +167,7 @@ const App: React.FC = () => {
     }
 
     const currentHistory = [...gameState.history];
-    const removedMoves = [];
+    const removedMoves: MoveHistory[] = [];
     
     for (let i = 0; i < movesToUndo; i++) {
       if (currentHistory.length > 0) {

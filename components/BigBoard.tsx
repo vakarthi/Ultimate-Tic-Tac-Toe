@@ -1,7 +1,7 @@
 import React from 'react';
 import { GameState } from '../types';
 import SmallBoard from './SmallBoard';
-import { X, Circle, Trophy } from 'lucide-react';
+import { Trophy } from 'lucide-react';
 
 interface BigBoardProps {
   gameState: GameState;

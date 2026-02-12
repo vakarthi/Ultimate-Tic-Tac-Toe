@@ -1,6 +1,6 @@
 import React from 'react';
 import { Player } from '../types';
-import { X, Circle, Minus } from 'lucide-react';
+import { X, Circle } from 'lucide-react';
 
 interface CellProps {
   value: Player | null;

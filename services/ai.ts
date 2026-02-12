@@ -1,6 +1,5 @@
 import { GameState, Player } from '../types';
 import { getAvailableMoves, makeMove, checkBoardWinner } from './gameLogic';
-import { WINNING_PATTERNS } from '../constants';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 

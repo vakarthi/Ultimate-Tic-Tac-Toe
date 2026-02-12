@@ -1,5 +1,5 @@
 import React from 'react';
-import { SmallBoardState, Player, GameState } from '../types';
+import { SmallBoardState, GameState } from '../types';
 import Cell from './Cell';
 import { X, Circle } from 'lucide-react';
 

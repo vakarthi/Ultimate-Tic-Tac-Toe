@@ -34,7 +34,6 @@ export const updateStats = (
   mode: GameMode,
   winner: Winner,
   difficulty?: 'easy' | 'medium' | 'hard',
-  isHost?: boolean // For online, though currently we treat online stats as generic
 ): GameStats => {
   const currentStats = getStats();
   const newStats = { ...currentStats };
