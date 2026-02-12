@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameMode, GameState, Player, MoveHistory, MatchRecord, PeerData } from './types';
+import { GameMode, GameState, Player, MoveHistory, MatchRecord } from './types';
 import Menu from './components/Menu';
 import BigBoard from './components/BigBoard';
 import Sidebar from './components/Sidebar';
@@ -165,7 +165,7 @@ const App: React.FC = () => {
     setCurrentView('game');
   };
 
-  const startCpuGame = (difficulty: 'easy' | 'medium' | 'hard') => {
+  const startCpuGame = (difficulty: 'easy' | 'medium' | 'hard' | 'impossible') => {
     setGameMode('cpu');
     setGameState({ ...INITIAL_GAME_STATE, difficulty });
     setUndoneMoves([]);
@@ -182,7 +182,7 @@ const App: React.FC = () => {
       setConnectionStatus('disconnected');
     });
 
-    peer.onConnection((conn) => {
+    peer.onConnection((_conn) => {
       setConnectionStatus('connected');
       setGameMode('online');
       setMyPlayerId('X');
@@ -206,7 +206,7 @@ const App: React.FC = () => {
     setPeerService(peer);
 
     peer.init(() => {
-      peer.connect(hostId, (conn) => {
+      peer.connect(hostId, (_conn) => {
         setConnectionStatus('connected');
         setGameMode('online');
         setMyPlayerId('O');

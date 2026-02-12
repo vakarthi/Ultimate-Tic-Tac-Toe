@@ -101,7 +101,7 @@ export const getAvailableMoves = (state: GameState): { boardIndex: number; cellI
  * Reconstructs the game state from a list of moves.
  * Useful for Undo/Redo functionality.
  */
-export const reconstructGameState = (moves: MoveHistory[], initialDifficulty?: 'easy' | 'medium' | 'hard'): GameState => {
+export const reconstructGameState = (moves: MoveHistory[], initialDifficulty?: 'easy' | 'medium' | 'hard' | 'impossible'): GameState => {
   let currentState: GameState = { ...INITIAL_GAME_STATE, difficulty: initialDifficulty };
   
   for (const move of moves) {

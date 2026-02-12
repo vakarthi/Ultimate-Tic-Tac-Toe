@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, User, BookOpen, BarChart2 } from 'lucide-react';
+import { Play, User } from 'lucide-react';
 
 interface SidebarProps {
   currentView: 'menu' | 'game' | 'profile' | 'analysis';

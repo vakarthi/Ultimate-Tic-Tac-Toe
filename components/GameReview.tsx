@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MatchRecord, GameState, MoveClassification } from '../types';
+import { MatchRecord, MoveClassification } from '../types';
 import BigBoard from './BigBoard';
 import { reconstructGameState } from '../services/gameLogic';
 import { analyzeMoveQuality, evaluateState } from '../services/ai';
@@ -18,9 +18,6 @@ const GameReview: React.FC<GameReviewProps> = ({ gameRecord, onClose }) => {
   // Reconstruct state up to currentMoveIndex
   const historySlice = gameRecord.history.slice(0, currentMoveIndex);
   const currentState = reconstructGameState(historySlice);
-  
-  // Determine if it's white (X) or black (O) turn in the *next* move of history
-  const nextMove = gameRecord.history[currentMoveIndex];
   
   useEffect(() => {
     // Basic Evaluation Bar Calculation

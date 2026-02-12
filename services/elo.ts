@@ -1,5 +1,3 @@
-import { GameMode } from '../types';
-
 const K_FACTOR = 32;
 
 /**

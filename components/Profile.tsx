@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlayerProfile, MatchRecord } from '../types';
 import { getProfile, getMatchHistory, saveProfile } from '../services/stats';
-import { Trophy, TrendingUp, Calendar, Hash, Edit2, Check, User, BookOpen } from 'lucide-react';
+import { Trophy, TrendingUp, Calendar, Hash, Edit2, Check, BookOpen } from 'lucide-react';
 
 interface ProfileProps {
   onReviewGame: (record: MatchRecord) => void;
