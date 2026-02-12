@@ -1,4 +1,4 @@
-import { GameState, Player, MoveClassification, MoveHistory } from '../types';
+import { GameState, Player, MoveClassification } from '../types';
 import { getAvailableMoves, makeMove, checkBoardWinner } from './gameLogic';
 import { WINNING_PATTERNS } from '../constants';
 
@@ -362,8 +362,8 @@ const canWinBoard = (cells: (Player | null)[], player: Player): boolean => {
 export const evaluateState = (
     state: GameState, 
     player: Player, 
-    lastMove: { boardIndex: number, cellIndex: number },
-    weights: any = {}
+    _lastMove: { boardIndex: number, cellIndex: number },
+    _weights: any = {}
 ): number => {
     return evaluateStateAdvanced(state, player);
 };
