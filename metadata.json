@@ -1,0 +1,5 @@
+{
+  "name": "Ultimate Tic-Tac-Toe",
+  "description": "A strategic depth version of Tic-Tac-Toe where you play on 9 nested boards. Features local PvP, advanced AI, and online multiplayer.",
+  "requestFramePermissions": []
+}
