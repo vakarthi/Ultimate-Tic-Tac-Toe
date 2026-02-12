@@ -1,12 +1,49 @@
 import { GameState, Player, MoveClassification, MoveHistory } from '../types';
 import { getAvailableMoves, makeMove, checkBoardWinner } from './gameLogic';
+import { WINNING_PATTERNS } from '../constants';
 
 type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible';
 
-const TIME_LIMIT_MS = 800; // Max time the AI can think
-const MAX_DEPTH_IMPOSSIBLE = 8;
-const WIN_SCORE = 100000;
-const MACRO_WIN_SCORE = 5000;
+const TIME_LIMIT_MS = 1500;
+const MAX_DEPTH_IMPOSSIBLE = 12;
+const WIN_SCORE = 10000000; // Ensure terminal wins always trump heuristics
+
+// --- STRATEGIC WEIGHTS ---
+const W = {
+  // Micro Board (Small board internal)
+  LINE_2: 10,
+  LINE_1: 1,
+  BLOCK_OPP_2: 15,
+  
+  // Board Capture Status (Base values)
+  // Reduced relative to Macro threats to prioritize global structure
+  BOARD_WON: 150,       
+  BOARD_LOST: -150,
+  
+  // Macro Strategy (The Big Game) - PRIORITIZED
+  // 2 boards in a row on the global grid is a massive threat
+  MACRO_WIN_THREAT: 5000, 
+  MACRO_BLOCK_THREAT: 6000, // Blocking opponent is slightly more urgent
+  MACRO_LINE_1: 200,      // Creating potential lines
+  
+  // Position Value (Multipliers)
+  MACRO_CENTER: 5.0,    // Critical
+  MACRO_CORNER: 3.0,    // Strong
+  MACRO_EDGE: 1.0,      // Weakest
+
+  // Penalties
+  GIVE_FREE_MOVE: -5000,   // Giving opponent free move usually loses the game
+  SEND_TO_WINNABLE: -4000, // Sending opponent to a board they can win
+};
+
+// Helper to get weight multiplier for a board index
+const getMacroWeight = (idx: number) => {
+    // 4 is center
+    if (idx === 4) return W.MACRO_CENTER;
+    // 0,2,6,8 are corners
+    if (idx === 0 || idx === 2 || idx === 6 || idx === 8) return W.MACRO_CORNER;
+    return W.MACRO_EDGE;
+};
 
 export const getBestMove = (state: GameState, difficulty: Difficulty = 'medium'): { boardIndex: number; cellIndex: number, score?: number } | null => {
   const moves = getAvailableMoves(state);
@@ -39,14 +76,15 @@ export const getBestMove = (state: GameState, difficulty: Difficulty = 'medium')
     return moves[Math.floor(Math.random() * moves.length)];
   }
 
-  // ADVANCED: Depth 2 Search + Static Heuristic
+  // ADVANCED: Shallow Search
   if (difficulty === 'hard') {
     let bestScore = -Infinity;
     let bestMove = moves[0];
+    const orderedMoves = orderMoves(state, moves, aiPlayer);
 
-    for (const move of moves) {
+    for (const move of orderedMoves) {
       const nextState = makeMove(state, move.boardIndex, move.cellIndex);
-      const score = evaluateState(nextState, aiPlayer, move, {});
+      const score = evaluateStateAdvanced(nextState, aiPlayer);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -55,7 +93,7 @@ export const getBestMove = (state: GameState, difficulty: Difficulty = 'medium')
     return { ...bestMove, score: bestScore };
   }
 
-  // IMPOSSIBLE: Iterative Deepening Minimax with Opponent Modeling
+  // IMPOSSIBLE: Advanced Iterative Deepening Minimax
   if (difficulty === 'impossible') {
     return getImpossibleMove(state, moves);
   }
@@ -69,28 +107,19 @@ const getImpossibleMove = (state: GameState, moves: { boardIndex: number; cellIn
   const startTime = performance.now();
   const aiPlayer = state.currentPlayer;
   
-  // 1. Model Opponent Strategy
-  const strategyWeights = analyzeOpponentStrategy(state.history, state.currentPlayer === 'X' ? 'O' : 'X');
-
   let bestMove = moves[0];
   let bestScore = -Infinity;
 
-  // 2. Iterative Deepening
-  // We start at depth 2 and increase until we run out of time.
-  // This ensures we always have a result, but use all available time to think deeper.
-  for (let depth = 2; depth <= MAX_DEPTH_IMPOSSIBLE; depth++) {
+  let sortedMoves = orderMoves(state, moves, aiPlayer);
+
+  for (let depth = 1; depth <= MAX_DEPTH_IMPOSSIBLE; depth++) {
     try {
       if (performance.now() - startTime > TIME_LIMIT_MS) break;
 
-      let currentBestMove = moves[0];
+      let currentBestMove = sortedMoves[0];
       let currentBestScore = -Infinity;
-      
-      // Root Level Alpha-Beta
       let alpha = -Infinity;
       let beta = Infinity;
-
-      // Move ordering: Try the previous best move first to maximize pruning
-      const sortedMoves = sortMoves(moves, bestMove);
 
       for (const move of sortedMoves) {
         const nextState = makeMove(state, move.boardIndex, move.cellIndex);
@@ -102,8 +131,7 @@ const getImpossibleMove = (state: GameState, moves: { boardIndex: number; cellIn
           beta, 
           false, 
           aiPlayer, 
-          startTime,
-          strategyWeights
+          startTime
         );
 
         if (score > currentBestScore) {
@@ -112,22 +140,26 @@ const getImpossibleMove = (state: GameState, moves: { boardIndex: number; cellIn
         }
         
         alpha = Math.max(alpha, score);
-        if (beta <= alpha) break; // Prune
+        if (beta <= alpha) break; 
       }
 
       bestMove = currentBestMove;
       bestScore = currentBestScore;
+      
+      // Sort moves: Best move first for next iteration
+      sortedMoves = [
+          bestMove,
+          ...sortedMoves.filter(m => m.boardIndex !== bestMove.boardIndex || m.cellIndex !== bestMove.cellIndex)
+      ];
 
     } catch (e) {
-      // Timeout break
-      break;
+      break; 
     }
   }
 
   return { ...bestMove, score: bestScore };
 };
 
-// Alpha-Beta Minimax
 const minimax = (
   state: GameState, 
   depth: number, 
@@ -135,34 +167,26 @@ const minimax = (
   beta: number, 
   isMaximizing: boolean, 
   aiPlayer: Player,
-  startTime: number,
-  strategyWeights: StrategyWeights
+  startTime: number
 ): number => {
-  // Timeout Check
-  if ((performance.now() - startTime) > TIME_LIMIT_MS) {
-    throw new Error("Timeout");
-  }
+  if ((performance.now() - startTime) > TIME_LIMIT_MS) throw new Error("Timeout");
 
-  // Terminal State check
-  if (state.winner === aiPlayer) return WIN_SCORE + depth; // Prefer winning sooner
-  if (state.winner && state.winner !== 'Draw') return -WIN_SCORE - depth; // Prefer losing later
+  if (state.winner === aiPlayer) return WIN_SCORE + depth; 
+  if (state.winner && state.winner !== 'Draw') return -WIN_SCORE - depth; 
   if (state.winner === 'Draw') return 0;
 
   if (depth === 0) {
-    // Pass lastMove for evaluation context
-    return evaluateState(state, aiPlayer, state.lastMove!, strategyWeights);
+    return evaluateStateAdvanced(state, aiPlayer);
   }
 
   const moves = getAvailableMoves(state);
-  
-  // If no moves but no winner (shouldn't happen in standard logic but safe guard)
   if (moves.length === 0) return 0;
 
   if (isMaximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
       const nextState = makeMove(state, move.boardIndex, move.cellIndex);
-      const evalScore = minimax(nextState, depth - 1, alpha, beta, false, aiPlayer, startTime, strategyWeights);
+      const evalScore = minimax(nextState, depth - 1, alpha, beta, false, aiPlayer, startTime);
       maxEval = Math.max(maxEval, evalScore);
       alpha = Math.max(alpha, evalScore);
       if (beta <= alpha) break;
@@ -172,7 +196,7 @@ const minimax = (
     let minEval = Infinity;
     for (const move of moves) {
       const nextState = makeMove(state, move.boardIndex, move.cellIndex);
-      const evalScore = minimax(nextState, depth - 1, alpha, beta, true, aiPlayer, startTime, strategyWeights);
+      const evalScore = minimax(nextState, depth - 1, alpha, beta, true, aiPlayer, startTime);
       minEval = Math.min(minEval, evalScore);
       beta = Math.min(beta, evalScore);
       if (beta <= alpha) break;
@@ -181,163 +205,197 @@ const minimax = (
   }
 };
 
-const sortMoves = (moves: { boardIndex: number; cellIndex: number }[], bestMove?: { boardIndex: number; cellIndex: number }) => {
-  if (!bestMove) return moves;
-  return [
-    bestMove,
-    ...moves.filter(m => m.boardIndex !== bestMove.boardIndex || m.cellIndex !== bestMove.cellIndex)
-  ];
+const orderMoves = (state: GameState, moves: { boardIndex: number; cellIndex: number }[], player: Player): { boardIndex: number; cellIndex: number }[] => {
+  const opponent = player === 'X' ? 'O' : 'X';
+
+  return moves.map(move => {
+    let score = 0;
+    const targetBoard = state.boards[move.boardIndex];
+
+    // 1. Wins Game?
+    const macroTest = [...state.macroBoard];
+    macroTest[move.boardIndex] = player;
+    if (checkBoardWinner(macroTest) === player) score += WIN_SCORE;
+
+    // 2. Wins Board?
+    const testCells = [...targetBoard.cells];
+    testCells[move.cellIndex] = player;
+    if (checkBoardWinner(testCells) === player) {
+        score += W.BOARD_WON * getMacroWeight(move.boardIndex) * 10; 
+    }
+
+    // 3. Strategic Destination Check
+    const sentTo = move.cellIndex;
+    const destBoard = state.boards[sentTo];
+
+    if (destBoard.winner !== null || destBoard.cells.every(c => c !== null)) {
+        score += W.GIVE_FREE_MOVE; 
+    } else {
+        // Can opponent win the destination board immediately?
+        // And is that destination board important?
+        let canOpponentWinDest = false;
+        for (let i = 0; i < 9; i++) {
+            if (destBoard.cells[i] === null) {
+                const destTest = [...destBoard.cells];
+                destTest[i] = opponent;
+                if (checkBoardWinner(destTest) === opponent) {
+                    canOpponentWinDest = true;
+                    break;
+                }
+            }
+        }
+        if (canOpponentWinDest) {
+            score += W.SEND_TO_WINNABLE;
+        }
+    }
+    
+    // Center bias
+    if (move.cellIndex === 4) score += 20;
+
+    return { move, score };
+  })
+  .sort((a, b) => b.score - a.score)
+  .map(item => item.move);
 };
 
-// --- OPPONENT STRATEGY ANALYSIS ---
+// --- ADVANCED EVALUATION ---
 
-interface StrategyWeights {
-  centerWeight: number;
-  cornerWeight: number;
-  edgeWeight: number;
-}
+const evaluateStateAdvanced = (state: GameState, player: Player): number => {
+  const opponent = player === 'X' ? 'O' : 'X';
+  let score = 0;
 
-const analyzeOpponentStrategy = (history: MoveHistory[], opponent: Player): StrategyWeights => {
-  // Default balanced weights
-  const weights = { centerWeight: 1.0, cornerWeight: 1.0, edgeWeight: 1.0 };
-  
-  if (history.length < 3) return weights;
+  // 1. MACRO BOARD EVALUATION (Priority #1)
+  // Check lines on the macro board
+  for (const pattern of WINNING_PATTERNS) {
+      let pCount = 0;
+      let oCount = 0;
+      let draws = 0;
+      
+      for (const idx of pattern) {
+          const winner = state.macroBoard[idx];
+          if (winner === player) pCount++;
+          else if (winner === opponent) oCount++;
+          else if (winner === 'Draw') draws++;
+      }
 
-  // Look at last 10 moves (or fewer)
-  const recentMoves = history.filter(m => m.player === opponent).slice(-5);
-  if (recentMoves.length === 0) return weights;
+      if (draws === 0) {
+          // Line is viable
+          if (pCount === 3) return WIN_SCORE; 
+          if (oCount === 3) return -WIN_SCORE;
 
-  let corners = 0;
-  let centers = 0;
-  let edges = 0;
+          if (pCount === 2 && oCount === 0) score += W.MACRO_WIN_THREAT;
+          else if (oCount === 2 && pCount === 0) score -= W.MACRO_BLOCK_THREAT; // Opponent threat
+          else if (pCount === 1 && oCount === 0) score += W.MACRO_LINE_1;
+          else if (oCount === 1 && pCount === 0) score -= W.MACRO_LINE_1;
+      }
+  }
 
-  const cornerIndices = [0, 2, 6, 8];
-  const centerIndex = 4;
+  // 2. SMALL BOARD EVALUATION
+  for (let i = 0; i < 9; i++) {
+    const board = state.boards[i];
+    const weight = getMacroWeight(i);
 
-  recentMoves.forEach(m => {
-    if (m.cellIndex === centerIndex) centers++;
-    else if (cornerIndices.includes(m.cellIndex)) corners++;
-    else edges++;
-  });
+    if (board.winner === player) {
+        score += W.BOARD_WON * weight;
+    } else if (board.winner === opponent) {
+        score += W.BOARD_LOST * weight;
+    } else if (board.winner === 'Draw') {
+        score -= 20; 
+    } else {
+        score += evaluateSmallBoardRaw(board.cells, player, opponent) * weight;
+    }
+  }
 
-  const total = recentMoves.length;
-  
-  // If opponent loves corners, we value occupying corners/centers more to block lines
-  // If opponent loves center, we overvalue the center.
-  if (corners / total > 0.6) weights.cornerWeight = 1.5;
-  if (centers / total > 0.4) weights.centerWeight = 2.0; // Center is usually key, if they fight for it, we must too
-  
-  return weights;
+  // 3. TACTICAL PENALTIES
+  if (state.currentPlayer === opponent) {
+      // We just moved
+      if (state.activeBoard === null) {
+          score += W.GIVE_FREE_MOVE;
+      } else {
+          const target = state.boards[state.activeBoard];
+          if (canWinBoard(target.cells, opponent)) {
+              score += W.SEND_TO_WINNABLE;
+          }
+      }
+  }
+
+  return score;
 };
 
-// --- EVALUATION ---
+const evaluateSmallBoardRaw = (cells: (Player | null)[], player: Player, opponent: Player): number => {
+    let s = 0;
+    if (cells[4] === player) s += 5;
+    if (cells[4] === opponent) s -= 5;
+
+    for (const pattern of WINNING_PATTERNS) {
+        let pCount = 0;
+        let oCount = 0;
+        for (const idx of pattern) {
+            if (cells[idx] === player) pCount++;
+            else if (cells[idx] === opponent) oCount++;
+        }
+
+        if (pCount > 0 && oCount === 0) {
+            if (pCount === 2) s += W.LINE_2;
+            else s += W.LINE_1;
+        } else if (oCount > 0 && pCount === 0) {
+            if (oCount === 2) s -= W.LINE_2;
+            else s -= W.LINE_1;
+        } else if (oCount === 2 && pCount === 1) {
+            s += W.BLOCK_OPP_2;
+        }
+    }
+    return s;
+};
+
+const canWinBoard = (cells: (Player | null)[], player: Player): boolean => {
+    for (let i = 0; i < 9; i++) {
+        if (cells[i] === null) {
+            const test = [...cells];
+            test[i] = player;
+            if (checkBoardWinner(test) === player) return true;
+        }
+    }
+    return false;
+};
 
 export const evaluateState = (
     state: GameState, 
     player: Player, 
     lastMove: { boardIndex: number, cellIndex: number },
-    weights: Partial<StrategyWeights> = { centerWeight: 1, cornerWeight: 1 }
+    weights: any = {}
 ): number => {
-  const opponent = player === 'X' ? 'O' : 'X';
-  const { centerWeight = 1, cornerWeight = 1 } = weights;
-
-  if (state.winner === player) return WIN_SCORE;
-  if (state.winner === opponent) return -WIN_SCORE;
-
-  let score = 0;
-
-  // 1. MACRO BOARD STATUS
-  const macroCells = state.macroBoard;
-  
-  // Count Macro Board Advantage
-  for (let i = 0; i < 9; i++) {
-    if (macroCells[i] === player) {
-      if (i === 4) score += MACRO_WIN_SCORE * 1.5; // Center macro is huge
-      else if ([0, 2, 6, 8].includes(i)) score += MACRO_WIN_SCORE * 1.2;
-      else score += MACRO_WIN_SCORE;
-    } else if (macroCells[i] === opponent) {
-      if (i === 4) score -= MACRO_WIN_SCORE * 1.5;
-      else score -= MACRO_WIN_SCORE;
-    }
-  }
-
-  // 2. MACRO THREATS (2 in a row)
-  // Check if this move created a threat to win the game
-  // Simplified check: rows, cols, diags on macro board
-  // (We skip full iteration for performance, but in Impossible mode, the deep search captures this naturally.
-  // This heuristic helps the leaf nodes.)
-
-  // 3. MICRO BOARD POSITIONING
-  // If the last move won a board, we already added score. 
-  // If not, evaluate positional value.
-  
-  const center = 4;
-  const corners = [0, 2, 6, 8];
-  
-  // Did we send opponent to a bad spot? (Active Board Logic)
-  const sentTo = state.activeBoard;
-  if (sentTo !== null) {
-    const targetBoard = state.boards[sentTo];
-    
-    // PENALTY: Sending opponent to a board they can win
-    // Look ahead 1 ply: Does target board have a winning move for opponent?
-    for (let i = 0; i < 9; i++) {
-        if (targetBoard.cells[i] === null) {
-            const testCells = [...targetBoard.cells];
-            testCells[i] = opponent;
-            if (checkBoardWinner(testCells) === opponent) {
-                // If this wins the GAME, massive penalty
-                // If just wins board, large penalty
-                score -= 3000;
-                break;
-            }
-        }
-    }
-    
-    // BONUS: Sending opponent to a finished/full board (Free Move for them next turn)?
-    // The game logic handles this: if sent to full board, activeBoard becomes null.
-    // If activeBoard is NOT null here, we constrained them. Good.
-  } else {
-    // We gave them a free move. Bad.
-    score -= 2000;
-  }
-
-  // 4. STRATEGIC POSITIONING (Weighted by Opponent Model)
-  if (lastMove.cellIndex === center) score += 100 * centerWeight;
-  else if (corners.includes(lastMove.cellIndex)) score += 60 * cornerWeight;
-  else score += 20;
-
-  return score;
+    return evaluateStateAdvanced(state, player);
 };
 
-// Analysis Helper for Game Review (Wrapper for compatibility)
 export const analyzeMoveQuality = (
   previousState: GameState,
   moveMade: { boardIndex: number, cellIndex: number }
 ): { classification: MoveClassification, score: number, bestMove?: {boardIndex: number, cellIndex: number} } => {
   
   const player = previousState.currentPlayer;
-  
-  // Get score of move MADE
   const stateAfterMove = makeMove(previousState, moveMade.boardIndex, moveMade.cellIndex);
-  const scoreMade = evaluateState(stateAfterMove, player, moveMade);
+  const scoreMade = evaluateStateAdvanced(stateAfterMove, player);
 
-  // Get score of BEST move using 'hard' heuristic for speed, or impossible if we want deep analysis (slower UI)
   const bestMoveObj = getBestMove(previousState, 'hard'); 
   
   if (!bestMoveObj) return { classification: 'forced', score: scoreMade };
 
   const bestMove = { boardIndex: bestMoveObj.boardIndex, cellIndex: bestMoveObj.cellIndex };
   const stateAfterBest = makeMove(previousState, bestMove.boardIndex, bestMove.cellIndex);
-  const scoreBest = evaluateState(stateAfterBest, player, bestMove);
+  const scoreBest = evaluateStateAdvanced(stateAfterBest, player);
 
-  const diff = scoreBest - scoreMade;
+  const diff = scoreBest - scoreMade; 
 
   let classification: MoveClassification = 'good';
-  if (diff < 50) classification = 'best'; 
-  else if (diff < 500) classification = 'good';
+  if (diff < 50) classification = 'best';
+  else if (diff < 300) classification = 'good';
   else if (diff < 2000) classification = 'inaccuracy';
   else classification = 'blunder';
+
+  if (classification === 'best' && scoreMade > 1000 && Math.abs(scoreBest - scoreMade) < 10) {
+      classification = 'brilliant';
+  }
 
   return {
     classification,

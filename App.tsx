@@ -7,11 +7,11 @@ import Profile from './components/Profile';
 import GameReview from './components/GameReview';
 import { INITIAL_GAME_STATE } from './constants';
 import { makeMove, isMoveValid, reconstructGameState } from './services/gameLogic';
-import { getBestMove } from './services/ai';
+import { getBestMove, analyzeMoveQuality } from './services/ai';
 import { PeerService } from './services/peerService';
 import { updateProfileAfterGame, saveMatchRecord, getProfile, getMatchHistory } from './services/stats';
 import { calculateEloChange, getCpuRating } from './services/elo';
-import { ArrowLeft, RefreshCw, Wifi, WifiOff, RotateCcw, RotateCw, Search } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Wifi, WifiOff, RotateCcw, RotateCw, Search, Cookie, Ban } from 'lucide-react';
 
 type View = 'menu' | 'game' | 'profile' | 'analysis';
 
@@ -32,6 +32,11 @@ const App: React.FC = () => {
   const [undoneMoves, setUndoneMoves] = useState<MoveHistory[]>([]);
   const [statsRecorded, setStatsRecorded] = useState(false);
 
+  // AI "Tamagotchi" State
+  const [aiTreats, setAiTreats] = useState(0);
+  const [aiStarvation, setAiStarvation] = useState(0);
+  const [aiFeedback, setAiFeedback] = useState<{msg: string, type: 'good' | 'bad' | 'neutral'} | null>(null);
+
   // Analysis State
   const [reviewGameRecord, setReviewGameRecord] = useState<MatchRecord | null>(null);
 
@@ -39,14 +44,50 @@ const App: React.FC = () => {
   useEffect(() => {
     if (gameMode === 'cpu' && gameState.currentPlayer === 'O' && !gameState.winner) {
       const timer = setTimeout(() => {
+        // 1. Get the move the AI wants to make
         const aiMove = getBestMove(gameState, gameState.difficulty);
+        
         if (aiMove) {
+          // 2. Analyze the move quality immediately
+          const analysis = analyzeMoveQuality(gameState, aiMove);
+          
+          // 3. Apply Reward/Punishment Logic
+          let msg = "";
+          let type: 'good' | 'bad' | 'neutral' = 'neutral';
+
+          if (analysis.classification === 'best' || analysis.classification === 'brilliant' || analysis.classification === 'good') {
+             // AI did good.
+             if (aiStarvation > 0) {
+                 setAiStarvation(prev => prev - 1);
+                 msg = "Good move! Working off the diet.";
+                 type = 'neutral';
+             } else {
+                 setAiTreats(prev => prev + 1);
+                 msg = analysis.classification === 'brilliant' ? "Brilliant! +1 Treat!" : "Tasty move! +1 Treat";
+                 type = 'good';
+             }
+          } else if (analysis.classification === 'inaccuracy') {
+              setAiStarvation(prev => prev + 2);
+              msg = "Inaccuracy! Starving for 2 turns.";
+              type = 'bad';
+          } else if (analysis.classification === 'blunder') {
+              setAiStarvation(prev => prev + 3);
+              msg = "BLUNDER! Starving for 3 turns!";
+              type = 'bad';
+          }
+
+          setAiFeedback({ msg, type });
+          
+          // Clear feedback after 3 seconds
+          setTimeout(() => setAiFeedback(null), 3000);
+
+          // 4. Execute Move
           handleMove(aiMove.boardIndex, aiMove.cellIndex);
         }
       }, 600);
       return () => clearTimeout(timer);
     }
-  }, [gameState.currentPlayer, gameMode, gameState.winner, gameState.difficulty]);
+  }, [gameState.currentPlayer, gameMode, gameState.winner, gameState.difficulty, aiStarvation]);
 
   // Cleanup PeerService
   useEffect(() => {
@@ -169,6 +210,10 @@ const App: React.FC = () => {
     setGameMode('cpu');
     setGameState({ ...INITIAL_GAME_STATE, difficulty });
     setUndoneMoves([]);
+    // Reset treats
+    setAiTreats(0);
+    setAiStarvation(0);
+    setAiFeedback(null);
     setCurrentView('game');
   };
 
@@ -265,6 +310,8 @@ const App: React.FC = () => {
     setGameState(INITIAL_GAME_STATE);
     setUndoneMoves([]);
     setStatsRecorded(false);
+    setAiTreats(0);
+    setAiStarvation(0);
   };
 
   const handleExitGame = () => {
@@ -304,6 +351,28 @@ const App: React.FC = () => {
                 </button>
 
                 <div className="flex items-center gap-4">
+                  {/* AI Treat UI */}
+                  {gameMode === 'cpu' && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700 relative">
+                      <div className={`transition-all duration-300 ${aiStarvation > 0 ? 'opacity-30 grayscale' : 'text-amber-400'}`}>
+                        {aiStarvation > 0 ? <Ban size={18} className="text-red-400"/> : <Cookie size={18} />}
+                      </div>
+                      <span className={`font-mono font-bold text-sm ${aiStarvation > 0 ? 'text-red-400' : 'text-amber-400'}`}>
+                        {aiStarvation > 0 ? `Diet: ${aiStarvation}` : aiTreats}
+                      </span>
+                      
+                      {/* Floating Feedback */}
+                      {aiFeedback && (
+                        <div className={`
+                          absolute top-10 left-1/2 -translate-x-1/2 w-48 text-center text-xs font-bold px-2 py-1 rounded shadow-lg z-50 pointer-events-none animate-bounce
+                          ${aiFeedback.type === 'good' ? 'bg-emerald-500 text-white' : aiFeedback.type === 'bad' ? 'bg-red-500 text-white' : 'bg-slate-600 text-white'}
+                        `}>
+                          {aiFeedback.msg}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {gameMode !== 'online' && (
                     <div className="flex bg-slate-800 rounded-lg p-0.5">
                       <button onClick={handleUndo} disabled={!gameState.history.length} className="p-1.5 hover:bg-slate-700 text-slate-300 rounded disabled:opacity-30"><RotateCcw size={16}/></button>
@@ -340,6 +409,11 @@ const App: React.FC = () => {
                             {gameMode !== 'local' && (
                                 <div className="text-lg text-slate-400">
                                     Rating: <span className="text-white font-bold">{getProfile().ratings[gameMode as 'online'|'cpu']}</span>
+                                </div>
+                            )}
+                            {gameMode === 'cpu' && (
+                                <div className="flex justify-center items-center gap-2 text-amber-400 bg-slate-800 py-2 px-4 rounded-full">
+                                    <Cookie size={20} /> <span className="font-bold">{aiTreats} Treats Earned</span>
                                 </div>
                             )}
                             <div className="flex flex-col gap-3">
