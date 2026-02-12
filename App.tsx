@@ -66,6 +66,14 @@ const App: React.FC = () => {
       let oppRating = 1200;
       let oppName = 'Opponent';
 
+      // Calculate Board Performance
+      // Note: In CPU mode, user is always 'X'. In Online, user is 'myPlayerId'.
+      const userSymbol = gameMode === 'online' ? myPlayerId : 'X';
+      const oppSymbol = userSymbol === 'X' ? 'O' : 'X';
+      
+      const myBoardsWon = gameState.macroBoard.filter(w => w === userSymbol).length;
+      const oppBoardsWon = gameState.macroBoard.filter(w => w === oppSymbol).length;
+
       if (gameMode === 'cpu') {
         oppRating = getCpuRating(gameState.difficulty || 'medium');
         oppName = `Bot (${gameState.difficulty})`;
@@ -74,7 +82,7 @@ const App: React.FC = () => {
         else if (gameState.winner === 'O') result = 'loss';
         else result = 'draw';
 
-        ratingChange = calculateEloChange(myProfile.ratings.cpu, oppRating, result);
+        ratingChange = calculateEloChange(myProfile.ratings.cpu, oppRating, result, myBoardsWon, oppBoardsWon);
         updateProfileAfterGame(result, 'cpu', ratingChange, gameState.difficulty);
       
       } else if (gameMode === 'online') {
@@ -85,7 +93,7 @@ const App: React.FC = () => {
         else if (gameState.winner === 'Draw') result = 'draw';
         else result = 'loss';
         
-        ratingChange = calculateEloChange(myProfile.ratings.online, oppRating, result);
+        ratingChange = calculateEloChange(myProfile.ratings.online, oppRating, result, myBoardsWon, oppBoardsWon);
         updateProfileAfterGame(result, 'online', ratingChange);
         
       } else {
@@ -112,7 +120,7 @@ const App: React.FC = () => {
     } else if (!gameState.winner) {
       setStatsRecorded(false);
     }
-  }, [gameState.winner, gameMode, statsRecorded, myPlayerId, opponentName, opponentRating, gameState.difficulty, gameState.history]);
+  }, [gameState.winner, gameMode, statsRecorded, myPlayerId, opponentName, opponentRating, gameState.difficulty, gameState.history, gameState.macroBoard]);
 
   const handleMove = (boardIndex: number, cellIndex: number, isRemote = false) => {
     if (gameState.winner) return;
@@ -130,8 +138,6 @@ const App: React.FC = () => {
   };
 
   // Online Data Listener
-  // We use a useEffect here to ensure the callback always has the latest 'gameState' and 'handleMove'
-  // This prevents stale closure issues where moves would apply to an old state.
   useEffect(() => {
     if (!peerService) return;
 
